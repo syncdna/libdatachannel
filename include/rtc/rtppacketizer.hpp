@@ -14,6 +14,7 @@
 #include "mediahandler.hpp"
 #include "message.hpp"
 #include "rtppacketizationconfig.hpp"
+#include "nalunit.hpp"
 
 namespace rtc {
 
@@ -39,6 +40,12 @@ protected:
 	/// @param payload RTP payload
 	/// @param setMark Set marker flag in RTP packet if true
 	virtual message_ptr packetize(shared_ptr<binary> payload, bool mark);
+
+	/// Creates RTP packet for given payload
+	/// @note This function increase sequence number after packetization.
+	/// @param payload RTP payload
+	/// @param setMark Set marker flag in RTP packet if true
+	virtual message_ptr packetize(const NalUnitRef& payload, bool mark);
 
 private:
 	static const auto RtpHeaderSize = 12;

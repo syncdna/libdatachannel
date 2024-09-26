@@ -53,6 +53,33 @@
 #include <string_view>
 #include <variant>
 #include <vector>
+#include <limits>
+
+namespace rtc {
+
+} // namespace rtc
+
+#if __cplusplus < 202002L
+
+#include <boost/core/span.hpp>
+
+namespace rtc {
+
+using boost::span;
+
+} // namespace rtc
+
+#else
+
+#include <span>
+
+namespace rtc {
+
+using std::span;
+
+} // namespace rtc
+
+#endif
 
 namespace rtc {
 
@@ -69,6 +96,14 @@ using std::weak_ptr;
 using binary = std::vector<byte>;
 using binary_ptr = shared_ptr<binary>;
 using message_variant = variant<binary, string>;
+
+struct binary_ref : span<byte> {
+        binary_ref(const binary_ref &) = default;
+        binary_ref(binary data) : span(data) {}
+        binary_ref(element_type* data, size_t size) : span(data, size) {}
+        virtual ~binary_ref() {}
+        virtual void write(element_type *dst) const { std::memcpy(dst, data(), size()); }
+};
 
 using std::int16_t;
 using std::int32_t;

@@ -220,6 +220,139 @@ public:
 	std::vector<shared_ptr<binary>> generateFragments(uint16_t maxFragmentSize);
 };
 
+
+/// Nal unit
+struct RTC_CPP_EXPORT NalUnitRef {
+	enum class Type { H264, H265 };
+
+	explicit NalUnitRef(NalUnit &unit) : mData(unit) {}
+	explicit NalUnitRef(const NalUnitRef &unit) = default;
+	template <typename T> NalUnitRef(const T& data, size_t size) : mData(data, size) {}
+	template <typename Iterator>
+	NalUnitRef(Iterator begin, Iterator end) : mData(&(*begin), end - begin) {}
+	virtual ~NalUnitRef() {}
+
+	bool forbiddenBit() const { return header()->forbiddenBit(); }
+	uint8_t nri() const { return header()->nri(); }
+	uint8_t unitType() const { return header()->unitType(); }
+
+	virtual binary_ref::element_type *data() const { return mData.data(); }
+	virtual size_t size() const { return mData.size(); }
+
+	virtual void write(binary_ref::element_type *dst) const {
+		std::memcpy(dst, mData.data(), mData.size());
+	}
+
+	/// NAL unit separator
+    using Separator = NalUnit::Separator;
+
+	static NalUnitStartSequenceMatch StartSequenceMatchSucc(NalUnitStartSequenceMatch match,
+	                                                        std::byte _byte, Separator separator) {
+		assert(separator != Separator::Length);
+		auto byte = (uint8_t)_byte;
+		auto detectShort =
+		    separator == Separator::ShortStartSequence || separator == Separator::StartSequence;
+		auto detectLong =
+		    separator == Separator::LongStartSequence || separator == Separator::StartSequence;
+		switch (match) {
+		case NUSM_noMatch:
+			if (byte == 0x00) {
+				return NUSM_firstZero;
+			}
+			break;
+		case NUSM_firstZero:
+			if (byte == 0x00) {
+				return NUSM_secondZero;
+			}
+			break;
+		case NUSM_secondZero:
+			if (byte == 0x00 && detectLong) {
+				return NUSM_thirdZero;
+			} else if (byte == 0x00 && detectShort) {
+				return NUSM_secondZero;
+			} else if (byte == 0x01 && detectShort) {
+				return NUSM_shortMatch;
+			}
+			break;
+		case NUSM_thirdZero:
+			if (byte == 0x00 && detectLong) {
+				return NUSM_thirdZero;
+			} else if (byte == 0x01 && detectLong) {
+				return NUSM_longMatch;
+			}
+			break;
+		case NUSM_shortMatch:
+			return NUSM_shortMatch;
+		case NUSM_longMatch:
+			return NUSM_longMatch;
+		}
+		return NUSM_noMatch;
+	}
+
+protected:
+	binary_ref mData;
+
+	const NalUnitHeader *header() const {
+		assert(mData.size() >= 1);
+		return reinterpret_cast<const NalUnitHeader *>(mData.data());
+	}
+
+	NalUnitHeader *header() {
+		assert(mData.size() >= 1);
+		return reinterpret_cast<NalUnitHeader *>(mData.data());
+	}
+};
+
+/// Nal unit fragment A
+struct RTC_CPP_EXPORT NalUnitFragmentARef final : NalUnitRef {
+	static std::vector<shared_ptr<NalUnitFragmentARef>> fragmentsFrom(shared_ptr<NalUnitRef> nalu,
+	                                                                  uint16_t maxFragmentSize);
+
+	enum class FragmentType { Start, Middle, End };
+
+	template <typename T>
+	NalUnitFragmentARef(FragmentType type, bool forbiddenBit, uint8_t nri, uint8_t unitType, T data,
+	                    size_t size);
+	virtual ~NalUnitFragmentARef() override {}
+
+	virtual binary_ref::element_type *data() const override { return nullptr; }
+	virtual size_t size() const override { return mData.size() + 2; }
+
+	virtual void write(binary_ref::element_type *dst) const override {
+		std::memcpy(dst, &mHeader, 2);
+		std::memcpy(dst + 2, mData.data(), mData.size());
+	}
+
+	uint8_t unitType() const { return mFragmentHeader.unitType(); }
+
+	FragmentType type() const {
+		if (mFragmentHeader.isStart()) {
+			return FragmentType::Start;
+		} else if (mFragmentHeader.isEnd()) {
+			return FragmentType::End;
+		} else {
+			return FragmentType::Middle;
+		}
+	}
+
+	void setForbiddenBit(bool isSet) { mHeader.setForbiddenBit(isSet); }
+	void setNRI(uint8_t nri) { mHeader.setNRI(nri); }
+	void setUnitType(uint8_t type) { mFragmentHeader.setUnitType(type); }
+	void setFragmentType(FragmentType type);
+
+protected:
+	NalUnitHeader mHeader;
+	NalUnitFragmentHeader mFragmentHeader;
+};
+
+class RTC_CPP_EXPORT NalUnitRefs : public std::vector<shared_ptr<NalUnitRef>> {
+public:
+	static const uint16_t defaultMaximumFragmentSize =
+	    uint16_t(RTC_DEFAULT_MTU - 12 - 8 - 40); // SRTP/UDP/IPv6
+
+	std::vector<shared_ptr<NalUnitRef>> generateFragments(uint16_t maxFragmentSize);
+};
+
 } // namespace rtc
 
 #endif /* RTC_ENABLE_MEDIA */

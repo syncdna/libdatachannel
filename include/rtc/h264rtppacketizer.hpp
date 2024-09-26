@@ -42,7 +42,7 @@ public:
 	void outgoing(message_vector &messages, const message_callback &send) override;
 
 private:
-	shared_ptr<NalUnits> splitMessage(binary_ptr message);
+	shared_ptr<NalUnitRefs> splitMessage(binary_ptr message);
 
 	const uint16_t maxFragmentSize;
 	const Separator separator;

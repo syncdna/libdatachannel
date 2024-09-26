@@ -23,8 +23,8 @@
 
 namespace rtc {
 
-shared_ptr<NalUnits> H264RtpPacketizer::splitMessage(binary_ptr message) {
-	auto nalus = std::make_shared<NalUnits>();
+shared_ptr<NalUnitRefs> H264RtpPacketizer::splitMessage(binary_ptr message) {
+	auto nalus = std::make_shared<NalUnitRefs>();
 	if (separator == Separator::Length) {
 		size_t index = 0;
 		while (index < message->size()) {
@@ -46,14 +46,14 @@ shared_ptr<NalUnits> H264RtpPacketizer::splitMessage(binary_ptr message) {
 			}
 			auto begin = message->begin() + naluStartIndex;
 			auto end = message->begin() + naluEndIndex;
-			nalus->push_back(std::make_shared<NalUnit>(begin, end));
+			nalus->push_back(std::make_shared<NalUnitRef>(begin, end));
 			index = naluEndIndex;
 		}
 	} else {
 		NalUnitStartSequenceMatch match = NUSM_noMatch;
 		size_t index = 0;
 		while (index < message->size()) {
-			match = NalUnit::StartSequenceMatchSucc(match, (*message)[index++], separator);
+			match = NalUnitRef::StartSequenceMatchSucc(match, (*message)[index++], separator);
 			if (match == NUSM_longMatch || match == NUSM_shortMatch) {
 				match = NUSM_noMatch;
 				break;
@@ -63,24 +63,25 @@ shared_ptr<NalUnits> H264RtpPacketizer::splitMessage(binary_ptr message) {
 		size_t naluStartIndex = index;
 
 		while (index < message->size()) {
-			match = NalUnit::StartSequenceMatchSucc(match, (*message)[index], separator);
+			match = NalUnitRef::StartSequenceMatchSucc(match, (*message)[index], separator);
 			if (match == NUSM_longMatch || match == NUSM_shortMatch) {
 				auto sequenceLength = match == NUSM_longMatch ? 4 : 3;
 				size_t naluEndIndex = index - sequenceLength;
 				match = NUSM_noMatch;
 				auto begin = message->begin() + naluStartIndex;
 				auto end = message->begin() + naluEndIndex + 1;
-				nalus->push_back(std::make_shared<NalUnit>(begin, end));
+				nalus->push_back(std::make_shared<NalUnitRef>(begin, end));
 				naluStartIndex = index + 1;
 			}
 			index++;
 		}
 		auto begin = message->begin() + naluStartIndex;
 		auto end = message->end();
-		nalus->push_back(std::make_shared<NalUnit>(begin, end));
+		nalus->push_back(std::make_shared<NalUnitRef>(begin, end));
 	}
 	return nalus;
 }
+
 
 H264RtpPacketizer::H264RtpPacketizer(shared_ptr<RtpPacketizationConfig> rtpConfig,
                                      uint16_t maxFragmentSize)
@@ -97,13 +98,14 @@ void H264RtpPacketizer::outgoing(message_vector &messages, [[maybe_unused]] cons
 	for(const auto &message : messages) {
 		auto nalus = splitMessage(message);
 		auto fragments = nalus->generateFragments(maxFragmentSize);
+
 		if (fragments.size() == 0)
 			continue;
 
 		for (size_t i = 0; i < fragments.size() - 1; i++)
-			result.push_back(packetize(fragments[i], false));
+			result.push_back(packetize(*fragments[i], false));
 
-		result.push_back(packetize(fragments[fragments.size() - 1], true));
+		result.push_back(packetize(*fragments[fragments.size() - 1], true));
 	}
 
 	messages.swap(result);
